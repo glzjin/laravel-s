@@ -19,6 +19,8 @@ class Laravel
      */
     protected $laravelKernel;
 
+    protected $laravel_conf = null;
+
     protected $conf = [];
 
     protected static $staticBlackList = [
@@ -230,7 +232,45 @@ class Laravel
         $this->app->forgetInstance('request');
         Facade::clearResolvedInstance('request');
 
+        $this->flushConfig();
+        $this->loadConfig($this->conf['rootPath']. '/config');
+
         //...
+    }
+
+    public function loadConfig($configFolder, $namespace = null)
+    {
+        if($this->laravel_conf != null) {
+            foreach($this->laravel_conf as $name => $config) {
+                $this->app['config']->set($namespace . $name , $config);
+            }
+
+            return;
+        }
+
+        $this->laravel_conf = array();
+        $files = $this->app['files']->files($configFolder);
+        $namespace = $namespace ? $namespace . '::' : '';
+
+        foreach($files as $file) {
+            $config = $this->app['files']->getRequire($file);
+            $name = $this->app['files']->name($file);
+
+            // special case for files named config.php (config keyword is omitted)
+            if($name === 'config') {
+                foreach($config as $key => $value) $this->app['config']->set($namespace . $key , $value);
+            }
+
+            $this->app['config']->set($namespace . $name , $config);
+            $this->laravel_conf[$name] = $config;
+        }
+    }
+
+    public function flushConfig()
+    {
+        foreach($this->app['config'] as $config) {
+            unset($this->app['config'][$config]);
+        }
     }
 
     public function fireEvent($name, array $params = [])
