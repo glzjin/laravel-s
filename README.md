@@ -202,15 +202,17 @@ class WebsocketService implements WebsocketHandlerInterface
     {
         \Log::info('New Websocket connection', [$request->fd]);
         $server->push($request->fd, 'Welcome to LaravelS');
-        // throw new \Exception('an exception'); // all exceptions will be ignored
+        // throw new \Exception('an exception');// all exceptions will be ignored, then record them into Swoole log, you need to try/catch them
     }
     public function onMessage(\swoole_websocket_server $server, \swoole_websocket_frame $frame)
     {
         \Log::info('Received message', [$frame->fd, $frame->data, $frame->opcode, $frame->finish]);
         $server->push($frame->fd, date('Y-m-d H:i:s'));
+        // throw new \Exception('an exception');// all exceptions will be ignored, then record them into Swoole log, you need to try/catch them
     }
     public function onClose(\swoole_websocket_server $server, $fd, $reactorId)
     {
+        // throw new \Exception('an exception');// all exceptions will be ignored, then record them into Swoole log, you need to try/catch them
     }
 }
 ```
@@ -299,7 +301,7 @@ $events->listen('laravels.generated_response', function (\Illuminate\Http\Reques
 ```
 
 ### Customized asynchronous events
-> The performance of listener processing is influenced by number of Swoole task process, you need to set [task_worker_num](https://www.swoole.co.uk/docs/modules/swoole-server/configuration) appropriately.
+> This feature depends on `AsyncTask` of `Swoole`, your need to set `swoole.task_worker_num` in `config/laravels.php` firstly. The performance of asynchronous event processing is influenced by number of Swoole task process, you need to set [task_worker_num](https://www.swoole.co.uk/docs/modules/swoole-server/configuration) appropriately.
 
 1.Create event class.
 ```PHP
@@ -324,11 +326,15 @@ use Hhxsv5\LaravelS\Swoole\Task\Event;
 use Hhxsv5\LaravelS\Swoole\Task\Listener;
 class TestListener1 extends Listener
 {
+    // Declare constructor without parameters
+    public function __construct()
+    {
+    }
     public function handle(Event $event)
     {
         \Log::info(__CLASS__ . ':handle start', [$event->getData()]);
         sleep(2);// Simulate the slow codes
-        // throw new \Exception('an exception'); // all exceptions will be ignored
+        // throw new \Exception('an exception');// all exceptions will be ignored, then record them into Swoole log, you need to try/catch them
     }
 }
 ```
@@ -357,7 +363,7 @@ var_dump($success);// Return true if sucess, otherwise false
 ```
 
 ## Asynchronous task queue
-> The performance of task processing is influenced by number of Swoole task process, you need to set [task_worker_num](https://www.swoole.co.uk/docs/modules/swoole-server/configuration) appropriately.
+> This feature depends on `AsyncTask` of `Swoole`, your need to set `swoole.task_worker_num` in `config/laravels.php` firstly. The performance of task processing is influenced by number of Swoole task process, you need to set [task_worker_num](https://www.swoole.co.uk/docs/modules/swoole-server/configuration) appropriately.
 
 1.Create task class.
 ```PHP
@@ -375,7 +381,7 @@ class TestTask extends Task
     {
         \Log::info(__CLASS__ . ':handle start', [$this->data]);
         sleep(2);// Simulate the slow codes
-        // throw new \Exception('an exception'); // all exceptions will be ignored
+        // throw new \Exception('an exception');// all exceptions will be ignored, then record them into Swoole log, you need to try/catch them
         $this->result = 'the result of ' . $this->data;
     }
     // Optional, finish event, the logic of after task handling, run in worker process, CAN deliver task 
@@ -407,6 +413,7 @@ use Hhxsv5\LaravelS\Swoole\Timer\CronJob;
 class TestCronJob extends CronJob
 {
     protected $i = 0;
+    // Declare constructor without parameters
     public function __construct()
     {
     }
@@ -425,6 +432,7 @@ class TestCronJob extends CronJob
             \Log::info(__METHOD__, ['stop', $this->i, microtime(true)]);
             $this->stop(); // stop this cron job
         }
+        // throw new \Exception('an exception');// all exceptions will be ignored, then record them into Swoole log, you need to try/catch them
     }
 }
 ```

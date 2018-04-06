@@ -76,7 +76,7 @@ class Server
                 try {
                     call_user_func_array([$handler, 'onOpen'], func_get_args());
                 } catch (\Exception $e) {
-                    // Do nothing to avoid 'zend_mm_heap corrupted'
+                    $this->logException($e);
                 }
             });
 
@@ -85,7 +85,7 @@ class Server
                 try {
                     call_user_func_array([$handler, 'onMessage'], func_get_args());
                 } catch (\Exception $e) {
-                    // Do nothing to avoid 'zend_mm_heap corrupted'
+                    $this->logException($e);
                 }
             });
 
@@ -96,7 +96,7 @@ class Server
                     try {
                         call_user_func_array([$handler, 'onClose'], func_get_args());
                     } catch (\Exception $e) {
-                        // Do nothing to avoid 'zend_mm_heap corrupted'
+                        $this->logException($e);
                     }
                 }
                 // else ignore the close event for http server
@@ -209,19 +209,22 @@ class Server
         }
 
         $listenerClasses = $this->conf['events'][$eventClass];
-        try {
-            if (!is_array($listenerClasses)) {
-                $listenerClasses = (array)$listenerClasses;
+        if (!is_array($listenerClasses)) {
+            $listenerClasses = (array)$listenerClasses;
+        }
+        foreach ($listenerClasses as $listenerClass) {
+            /**
+             * @var Listener $listener
+             */
+            $listener = new $listenerClass();
+            if (!($listener instanceof Listener)) {
+                throw new \Exception(sprintf('%s must extend the abstract class %s', $listenerClass, Listener::class));
             }
-            foreach ($listenerClasses as $listenerClass) {
-                /**
-                 * @var Listener $listener
-                 */
-                $listener = new $listenerClass();
+            try {
                 $listener->handle($event);
+            } catch (\Exception $e) {
+                $this->logException($e);
             }
-        } catch (\Exception $e) {
-            // Do nothing to avoid 'zend_mm_heap corrupted'
         }
     }
 
@@ -230,7 +233,7 @@ class Server
         try {
             $task->handle();
         } catch (\Exception $e) {
-            // Do nothing to avoid 'zend_mm_heap corrupted'
+            $this->logException($e);
         }
     }
 
@@ -251,6 +254,10 @@ class Server
         }
     }
 
+    protected function logException(\Exception $e)
+    {
+        $this->log(sprintf('Uncaught exception \'%s\': %s:%s, [%d]%s%s%s', get_class($e), $e->getFile(), $e->getLine(), $e->getCode(), $e->getMessage(), PHP_EOL, $e->getTraceAsString()), 'ERROR');
+    }
 
     protected function log($msg, $type = 'INFO')
     {

@@ -201,15 +201,17 @@ class WebsocketService implements WebsocketHandlerInterface
     {
         \Log::info('New Websocket connection', [$request->fd]);
         $server->push($request->fd, 'Welcome to LaravelS');
-        // throw new \Exception('an exception'); //上层会自动忽略handle时抛出的异常
+        // throw new \Exception('an exception');// 此时抛出的异常上层会忽略，并记录到Swoole日志，需要开发者try/catch捕获处理
     }
     public function onMessage(\swoole_websocket_server $server, \swoole_websocket_frame $frame)
     {
         \Log::info('Received message', [$frame->fd, $frame->data, $frame->opcode, $frame->finish]);
         $server->push($frame->fd, date('Y-m-d H:i:s'));
+        // throw new \Exception('an exception');// 此时抛出的异常上层会忽略，并记录到Swoole日志，需要开发者try/catch捕获处理
     }
     public function onClose(\swoole_websocket_server $server, $fd, $reactorId)
     {
+        // throw new \Exception('an exception');// 此时抛出的异常上层会忽略，并记录到Swoole日志，需要开发者try/catch捕获处理
     }
 }
 ```
@@ -297,7 +299,7 @@ $events->listen('laravels.generated_response', function (\Illuminate\Http\Reques
 ```
 
 ### 自定义的异步事件
-> 事件监听的处理能力受Task进程数影响，需合理设置[task_worker_num](https://wiki.swoole.com/wiki/page/276.html)。
+> 此特性依赖`Swoole`的`AsyncTask`，必须先设置`config/laravels.php`的`swoole.task_worker_num`。异步事件的处理能力受Task进程数影响，需合理设置[task_worker_num](https://wiki.swoole.com/wiki/page/276.html)。
 
 1.创建事件类。
 ```PHP
@@ -322,11 +324,15 @@ use Hhxsv5\LaravelS\Swoole\Task\Event;
 use Hhxsv5\LaravelS\Swoole\Task\Listener;
 class TestListener1 extends Listener
 {
+    // 声明没有参数的构造函数
+    public function __construct()
+    {
+    }
     public function handle(Event $event)
     {
         \Log::info(__CLASS__ . ':handle start', [$event->getData()]);
         sleep(2);// 模拟一些慢速的事件处理
-        // throw new \Exception('an exception'); //上层会自动忽略handle时抛出的异常
+        // throw new \Exception('an exception');// handle时抛出的异常上层会忽略，并记录到Swoole日志，需要开发者try/catch捕获处理
     }
 }
 ```
@@ -355,7 +361,7 @@ var_dump($success);//判断是否触发成功
 ```
 
 ## 异步的任务队列
-> 异步任务的处理能力受Task进程数影响，需合理设置[task_worker_num](https://wiki.swoole.com/wiki/page/276.html)。
+> 此特性依赖`Swoole`的`AsyncTask`，必须先设置`config/laravels.php`的`swoole.task_worker_num`。异步任务的处理能力受Task进程数影响，需合理设置[task_worker_num](https://wiki.swoole.com/wiki/page/276.html)。
 
 1.创建任务类。
 ```PHP
@@ -373,7 +379,7 @@ class TestTask extends Task
     {
         \Log::info(__CLASS__ . ':handle start', [$this->data]);
         sleep(2);// 模拟一些慢速的事件处理
-        // throw new \Exception('an exception'); //上层会自动忽略handle时抛出的异常
+        // throw new \Exception('an exception');// handle时抛出的异常上层会忽略，并记录到Swoole日志，需要开发者try/catch捕获处理
         $this->result = 'the result of ' . $this->data;
     }
     // 可选的，完成事件，任务处理完后的逻辑，运行在Worker进程中，可以投递任务
@@ -405,6 +411,7 @@ use Hhxsv5\LaravelS\Swoole\Timer\CronJob;
 class TestCronJob extends CronJob
 {
     protected $i = 0;
+    // 声明没有参数的构造函数
     public function __construct()
     {
     }
@@ -421,8 +428,9 @@ class TestCronJob extends CronJob
 
         if ($this->i >= 10) { // 运行10次后不再执行
             \Log::info(__METHOD__, ['stop', $this->i, microtime(true)]);
-            $this->stop(); // stop this cron job
+            $this->stop(); // 终止此任务
         }
+        // throw new \Exception('an exception');// 此时抛出的异常上层会忽略，并记录到Swoole日志，需要开发者try/catch捕获处理
     }
 }
 ```
