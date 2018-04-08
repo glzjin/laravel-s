@@ -5,8 +5,6 @@ namespace Hhxsv5\LaravelS\Swoole;
 use Hhxsv5\LaravelS\Swoole\Task\Event;
 use Hhxsv5\LaravelS\Swoole\Task\Listener;
 use Hhxsv5\LaravelS\Swoole\Task\Task;
-use Hhxsv5\LaravelS\Swoole\Task\TimerTask;
-use Hhxsv5\LaravelS\Swoole\Timer\CronJob;
 
 class Server
 {
@@ -42,6 +40,7 @@ class Server
         $this->bindHttpEvent();
         $this->bindTaskEvent();
         $this->bindWebsocketEvent();
+        $this->bindSwooleTables();
     }
 
     protected function bindBaseEvent()
@@ -71,30 +70,30 @@ class Server
     protected function bindWebsocketEvent()
     {
         if ($this->enableWebsocket) {
-            $this->swoole->on('Open', function () {
+            $this->swoole->on('Open', function (\swoole_websocket_server $server, \swoole_http_request $request) {
                 $handler = $this->getWebsocketHandler();
                 try {
-                    call_user_func_array([$handler, 'onOpen'], func_get_args());
+                    $handler->onOpen($server, $request);
                 } catch (\Exception $e) {
                     $this->logException($e);
                 }
             });
 
-            $this->swoole->on('Message', function () {
+            $this->swoole->on('Message', function (\swoole_websocket_server $server, \swoole_websocket_frame $frame) {
                 $handler = $this->getWebsocketHandler();
                 try {
-                    call_user_func_array([$handler, 'onMessage'], func_get_args());
+                    $handler->onMessage($server, $frame);
                 } catch (\Exception $e) {
                     $this->logException($e);
                 }
             });
 
-            $this->swoole->on('Close', function (\swoole_http_server $server, $fd) {
+            $this->swoole->on('Close', function (\swoole_websocket_server $server, $fd, $reactorId) {
                 $clientInfo = $server->getClientInfo($fd);
                 if (isset($clientInfo['websocket_status']) && $clientInfo['websocket_status'] === \WEBSOCKET_STATUS_FRAME) {
                     $handler = $this->getWebsocketHandler();
                     try {
-                        call_user_func_array([$handler, 'onClose'], func_get_args());
+                        $handler->onClose($server, $fd, $reactorId);
                     } catch (\Exception $e) {
                         $this->logException($e);
                     }
@@ -118,6 +117,24 @@ class Server
         }
         $handler = $t;
         return $handler;
+    }
+
+    protected function bindSwooleTables()
+    {
+        $tables = isset($this->conf['swoole_tables']) ? (array)$this->conf['swoole_tables'] : [];
+        foreach ($tables as $name => $table) {
+            $t = new \swoole_table($table['size']);
+            foreach ($table['column'] as $column) {
+                if (isset($column['size'])) {
+                    $t->column($column['name'], $column['type'], $column['size']);
+                } else {
+                    $t->column($column['name'], $column['type']);
+                }
+            }
+            $t->create();
+            $name .= 'Table'; // Avoid naming conflicts
+            $this->swoole->$name = $t;
+        }
     }
 
     public function onStart(\swoole_http_server $server)
@@ -256,7 +273,7 @@ class Server
 
     protected function logException(\Exception $e)
     {
-        $this->log(sprintf('Uncaught exception \'%s\': %s:%s, [%d]%s%s%s', get_class($e), $e->getFile(), $e->getLine(), $e->getCode(), $e->getMessage(), PHP_EOL, $e->getTraceAsString()), 'ERROR');
+        $this->log(sprintf('Uncaught exception \'%s\': [%d]%s called in %s:%d%s%s', get_class($e), $e->getCode(), $e->getMessage(), $e->getFile(), $e->getLine(), PHP_EOL, $e->getTraceAsString()), 'ERROR');
     }
 
     protected function log($msg, $type = 'INFO')

@@ -197,6 +197,10 @@ use Hhxsv5\LaravelS\Swoole\WebsocketHandlerInterface;
  */
 class WebsocketService implements WebsocketHandlerInterface
 {
+    // 声明没有参数的构造函数
+    public function __construct()
+    {
+    }
     public function onOpen(\swoole_websocket_server $server, \swoole_http_request $request)
     {
         \Log::info('New Websocket connection', [$request->fd]);
@@ -232,7 +236,9 @@ class WebsocketService implements WebsocketHandlerInterface
 // ...
 ```
 
-3.与Nginx配合使用（推荐）
+3.使用`swoole_table`绑定FD与UserId，可选的，[Swoole Table示例](https://github.com/hhxsv5/laravel-s/blob/master/README-CN.md#%E4%BD%BF%E7%94%A8swoole_table)。也可以用其他全局存储服务，例如Redis/Memcached/MySQL，但需要注意多个`Swoole Server`实例时FD可能冲突。
+
+4.与Nginx配合使用（推荐）
 > 参考 [WebSocket代理](http://nginx.org/en/docs/http/websocket.html)
 
 ```Nginx
@@ -461,6 +467,59 @@ class TestCronJob extends CronJob
  */
 $swoole = app('swoole');
 var_dump($swoole->stats());// 单例
+```
+
+## 使用`swoole_table`
+
+1.定义`swoole_table`，支持定义多个Table。
+> Swoole启动之前会创建定义的所有Table。
+
+```PHP
+// 在"config/laravels.php"配置`swoole_table`
+[
+    // ...
+    'swoole_tables'  => [
+        // 场景：WebSocket中UserId与FD绑定
+        'ws' => [// Key为Table名称，使用时会自动添加Table后缀，避免重名。这里定义名为wsTable的Table
+            'size'   => 102400,//Table的最大行数
+            'column' => [// Table的列定义
+                ['name' => 'value', 'type' => \swoole_table::TYPE_INT, 'size' => 8],
+            ],
+        ],
+        //...继续定义其他Table
+    ],
+    // ...
+];
+```
+
+2.访问`swoole_table`：所有的Table实例均绑定在`swoole_server`上，通过`app('swoole')->xxxTable`访问。
+```PHP
+// 场景：WebSocket中UserId与FD绑定
+public function onOpen(\swoole_websocket_server $server, \swoole_http_request $request)
+{
+    // var_dump(app('swoole') === $server);// 同一实例
+    $userId = mt_rand(1000, 10000);
+    app('swoole')->wsTable->set('uid:' . $userId, ['value' => $request->fd]);// 绑定uid到fd的映射
+    app('swoole')->wsTable->set('fd:' . $request->fd, ['value' => $userId]);// 绑定fd到uid的映射
+    $server->push($request->fd, 'Welcome to LaravelS');
+}
+public function onMessage(\swoole_websocket_server $server, \swoole_websocket_frame $frame)
+{
+    foreach (app('swoole')->wsTable as $key => $row) {
+        if (strpos($key, 'uid:') === 0) {
+            $server->push($row['value'], 'Broadcast: ' . date('Y-m-d H:i:s'));// 广播
+        }
+    }
+}
+public function onClose(\swoole_websocket_server $server, $fd, $reactorId)
+{
+    $uid = app('swoole')->wsTable->get('fd:' . $fd);
+    if ($uid !== false) {
+        app('swoole')->wsTable->del('uid:' . $uid['value']);// 解绑uid映射
+    }
+    app('swoole')->wsTable->del('fd:' . $fd);// 解绑fd映射
+    $server->push($fd, 'Goodbye');
+}
 ```
 
 ## 注意事项

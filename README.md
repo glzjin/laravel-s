@@ -198,6 +198,10 @@ use Hhxsv5\LaravelS\Swoole\WebsocketHandlerInterface;
  */
 class WebsocketService implements WebsocketHandlerInterface
 {
+    // Declare constructor without parameters
+    public function __construct()
+    {
+    }
     public function onOpen(\swoole_websocket_server $server, \swoole_http_request $request)
     {
         \Log::info('New Websocket connection', [$request->fd]);
@@ -232,8 +236,9 @@ class WebsocketService implements WebsocketHandlerInterface
 ],
 // ...
 ```
+3.Use `swoole_table` to bind FD & UserId, optional, [Swoole Table Demo](https://github.com/hhxsv5/laravel-s/blob/master/README.md#use-swoole_table). Also you can use the other global storage services, like Redis/Memcached/MySQL, but be careful that FD will be possible conflicting between multiple `Swoole Servers`.
 
-3.Cooperate with Nginx (Recommended)
+4.Cooperate with Nginx (Recommended)
 > Refer [WebSocket Proxy](http://nginx.org/en/docs/http/websocket.html)
 
 ```Nginx
@@ -463,6 +468,59 @@ class TestCronJob extends CronJob
  */
 $swoole = app('swoole');
 var_dump($swoole->stats());// Singleton
+```
+
+## Use `swoole_table`
+
+1.Define `swoole_table`, support multiple.
+> All defined tables will be created before Swoole starting.
+
+```PHP
+// in file "config/laravels.php"
+[
+    // ...
+    'swoole_tables'  => [
+        // Scene：bind UserId & FD in WebSocket
+        'ws' => [// The Key is table name, will add suffix "Table" to avoid naming conficts. Here defined a table named "wsTable"
+            'size'   => 102400,// The max size
+            'column' => [// Define the columns
+                ['name' => 'value', 'type' => \swoole_table::TYPE_INT, 'size' => 8],
+            ],
+        ],
+        //...Define the other tables
+    ],
+    // ...
+];
+```
+
+2.Access `swoole_table`: all table instances will be bound on `swoole_server`, access by `app('swoole')->xxxTable`.
+```PHP
+// Scene：bind UserId & FD in WebSocket
+public function onOpen(\swoole_websocket_server $server, \swoole_http_request $request)
+{
+    // var_dump(app('swoole') === $server);// The same instance
+    $userId = mt_rand(1000, 10000);
+    app('swoole')->wsTable->set('uid:' . $userId, ['value' => $request->fd]);// Bind map uid to fd
+    app('swoole')->wsTable->set('fd:' . $request->fd, ['value' => $userId]);// Bind map fd to uid
+    $server->push($request->fd, 'Welcome to LaravelS');
+}
+public function onMessage(\swoole_websocket_server $server, \swoole_websocket_frame $frame)
+{
+    foreach (app('swoole')->wsTable as $key => $row) {
+        if (strpos($key, 'uid:') === 0) {
+            $server->push($row['value'], 'Broadcast: ' . date('Y-m-d H:i:s'));// Broadcast
+        }
+    }
+}
+public function onClose(\swoole_websocket_server $server, $fd, $reactorId)
+{
+    $uid = app('swoole')->wsTable->get('fd:' . $fd);
+    if ($uid !== false) {
+        app('swoole')->wsTable->del('uid:' . $uid['value']); // Ubind uid map
+    }
+    app('swoole')->wsTable->del('fd:' . $fd);// Unbind fd map
+    $server->push($fd, 'Goodbye');
+}
 ```
 
 ## Important notices
